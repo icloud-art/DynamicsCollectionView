@@ -9,8 +9,5 @@
 #import <UIKit/UIKit.h>
 
 @interface LYHCollectionViewLayout : UICollectionViewFlowLayout
-@property (strong,nonatomic) UIDynamicAnimator * dynamicAnimator;
-@property (nonatomic, strong) NSMutableSet *visibleIndexPathsSet;
-@property (nonatomic, assign) CGFloat latestDelta;
--(id)init;
+
 @end

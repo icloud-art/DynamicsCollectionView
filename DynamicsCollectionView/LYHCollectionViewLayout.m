@@ -8,6 +8,12 @@
 
 #import "LYHCollectionViewLayout.h"
 
+@interface LYHCollectionViewLayout()
+@property (strong,nonatomic) UIDynamicAnimator * dynamicAnimator;
+@property (nonatomic, strong) NSMutableSet *visibleIndexPathsSet;
+@property (nonatomic, assign) CGFloat latestDelta;
+@end
+
 @implementation LYHCollectionViewLayout
 
 -(id)init
@@ -18,13 +24,18 @@
         self.itemSize = CGSizeMake(44, 44);
         self.sectionInset = UIEdgeInsetsMake(10, 10, 10, 10);
         self.dynamicAnimator = [[UIDynamicAnimator alloc]initWithCollectionViewLayout:self];
+        self.visibleIndexPathsSet = [NSMutableSet set];
     }
     return self;
 }
 -(void)prepareLayout
 {
     [super prepareLayout];
-    CGSize contentSize = self.collectionView.contentSize;
+    //方法一:
+    
+    //这种方法在cell非常多得情况下会显得效率很低.
+    /*
+     CGSize contentSize = self.collectionView.contentSize;
     NSArray * items = [super layoutAttributesForElementsInRect:CGRectMake(0, 0, contentSize.width, contentSize.height)];
     if (self.dynamicAnimator.behaviors.count == 0) {
         [items enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
@@ -35,6 +46,64 @@
             [self.dynamicAnimator addBehavior:behaviour];
         }];
     }
+     */
+    
+    //方法二:
+    
+    //我们可以平铺dynamic Behaviors 来优化性能
+    //就是说,只加载显示和即将显示的cell
+    
+    CGRect originalRect = (CGRect){.origin = self.collectionView.bounds.origin,.size = self.collectionView.frame.size};
+    //在实际显示矩形的每个方向都扩大100像素
+    CGRect visibleRect = CGRectInset(originalRect, -100, -100);
+    //收集在显示范围内的collection view layout attributes 和他们的index paths
+    NSArray * itemsInVisibleRectArray = [super layoutAttributesForElementsInRect:visibleRect];
+    NSSet * itemsIndexPathsInVisibleRectSet = [NSSet setWithArray:[itemsInVisibleRectArray valueForKey:@"indexPath"]];
+    /*
+     遍历dynamic animator 的behaviors 过滤掉那些已经在 itemsIndexPathsInVisibleRectSet 中的item.
+     因为我们已经过滤掉我们的behavior,所以我们将要遍历的这些item都是不在显示范围内的,我们就可以将这些item从
+     animtor中删除掉.
+     */
+    NSPredicate * predicate = [NSPredicate predicateWithBlock:^BOOL(UIAttachmentBehavior * behaviour , NSDictionary *bindings) {
+        BOOL currentlyVisible = [itemsIndexPathsInVisibleRectSet member:[[[behaviour items] firstObject]indexPath]];
+        return !currentlyVisible;
+    }];
+    
+    NSArray * noLongerVisibleBehaviors = [self.dynamicAnimator.behaviors filteredArrayUsingPredicate:predicate];
+    
+    [noLongerVisibleBehaviors enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+        [self.dynamicAnimator removeBehavior:obj];
+        [self.visibleIndexPathsSet removeObject:[[[obj items] firstObject] indexPath]];
+    }];
+    //得到新出现的item
+    NSPredicate * newlyPredicate = [NSPredicate predicateWithBlock:^BOOL(UICollectionViewLayoutAttributes *item, NSDictionary *bindings) {
+        BOOL currentlyVisible = [self.visibleIndexPathsSet member:item.indexPath]!=nil;
+        return !currentlyVisible;
+    }];
+    NSArray * newlyVisibleItems = [itemsInVisibleRectArray filteredArrayUsingPredicate:newlyPredicate];
+    CGPoint touchLocation = [self.collectionView.panGestureRecognizer locationInView:self.collectionView];
+    [newlyVisibleItems enumerateObjectsUsingBlock:^(UICollectionViewLayoutAttributes * item, NSUInteger idx, BOOL *stop) {
+        CGPoint center = item.center;
+        UIAttachmentBehavior * springBehaviour = [[UIAttachmentBehavior alloc]initWithItem:item attachedToAnchor:center];
+        springBehaviour.length = 0.0f;
+        springBehaviour.damping = 0.8f;
+        springBehaviour.frequency = 1.0f;
+        if (!CGPointEqualToPoint(CGPointZero, touchLocation)) {
+            CGFloat yDistanceFromTouch = fabsf(touchLocation.y - springBehaviour.anchorPoint.y);
+            CGFloat xDistanceFromTouch = fabsf(touchLocation.x - springBehaviour.anchorPoint.x);
+            CGFloat scrollResistance = (yDistanceFromTouch + xDistanceFromTouch) / 1500.0f;
+            
+            if (self.latestDelta < 0) {
+                center.y += MAX(self.latestDelta, self.latestDelta*scrollResistance);
+            }
+            else {
+                center.y += MIN(self.latestDelta, self.latestDelta*scrollResistance);
+            }
+            item.center = center;
+        }
+        [self.dynamicAnimator addBehavior:springBehaviour];
+        [self.visibleIndexPathsSet addObject:item.indexPath];
+    }];
 }
 
 -(NSArray *)layoutAttributesForElementsInRect:(CGRect)rect
@@ -53,7 +122,7 @@
 {
     UIScrollView * scrollview= self.collectionView;
     CGFloat delta = newBounds.origin.y - scrollview.bounds.origin.y;
-    
+    self.latestDelta = delta;
     CGPoint touchLocation = [self.collectionView.panGestureRecognizer locationInView:self.collectionView];
     [self.dynamicAnimator.behaviors enumerateObjectsUsingBlock:^(UIAttachmentBehavior *springBehaviour, NSUInteger idx, BOOL *stop) {
         CGFloat yDistanceFromTouch = fabs(touchLocation.y - springBehaviour.anchorPoint.y);
