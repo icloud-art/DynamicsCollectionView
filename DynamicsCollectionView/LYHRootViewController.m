@@ -37,7 +37,8 @@ static NSString * cellIdentifier = @"CellIdentifier";
 -(void)viewDidAppear:(BOOL)animated
 {
     [super viewDidAppear:animated];
-    [self.collectionViewLayout invalidateLayout];
+    //方法二的时候下面这句代码就不需要了
+    //[self.collectionViewLayout invalidateLayout];
 }
 
 -(NSInteger)collectionView:(UICollectionView *)collectionView numberOfItemsInSection:(NSInteger)section

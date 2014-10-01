@@ -75,7 +75,10 @@
         [self.dynamicAnimator removeBehavior:obj];
         [self.visibleIndexPathsSet removeObject:[[[obj items] firstObject] indexPath]];
     }];
-    //得到新出现的item
+    /*
+     得到新出现的item,一旦有新的layout attribute 出现,我们就可以遍历他们
+     来创建新的behavior并且将他们的index path 添加到visibleIndexPathsSet中.
+     */
     NSPredicate * newlyPredicate = [NSPredicate predicateWithBlock:^BOOL(UICollectionViewLayoutAttributes *item, NSDictionary *bindings) {
         BOOL currentlyVisible = [self.visibleIndexPathsSet member:item.indexPath]!=nil;
         return !currentlyVisible;
@@ -88,6 +91,7 @@
         springBehaviour.length = 0.0f;
         springBehaviour.damping = 0.8f;
         springBehaviour.frequency = 1.0f;
+        //如果有滑动collection View
         if (!CGPointEqualToPoint(CGPointZero, touchLocation)) {
             CGFloat yDistanceFromTouch = fabsf(touchLocation.y - springBehaviour.anchorPoint.y);
             CGFloat xDistanceFromTouch = fabsf(touchLocation.x - springBehaviour.anchorPoint.x);
@@ -118,15 +122,22 @@
 }
 
 //响应滚动事件
+//这个方法在collection view 的bound发生改变的时候调用
+
 -(BOOL)shouldInvalidateLayoutForBoundsChange:(CGRect)newBounds
 {
     UIScrollView * scrollview= self.collectionView;
+    //得出垂直偏移量
     CGFloat delta = newBounds.origin.y - scrollview.bounds.origin.y;
+    NSLog(@"delta is %f",delta);
     self.latestDelta = delta;
+    //获取触屏的位置
     CGPoint touchLocation = [self.collectionView.panGestureRecognizer locationInView:self.collectionView];
+    //这样我们就可以使那些里触屏位置近的item移动的更迅速,而较远的item运动的滞后些.
     [self.dynamicAnimator.behaviors enumerateObjectsUsingBlock:^(UIAttachmentBehavior *springBehaviour, NSUInteger idx, BOOL *stop) {
         CGFloat yDistanceFromTouch = fabs(touchLocation.y - springBehaviour.anchorPoint.y);
         CGFloat xDistanceFromTouch = fabs(touchLocation.x - springBehaviour.anchorPoint.x);
+        //获取滑动阻力系数,1500使设置的一个经验值,分母越小弹簧效果越好
         CGFloat scrollResistance = (yDistanceFromTouch + xDistanceFromTouch) / 1500.0f;
         UICollectionViewLayoutAttributes * item = springBehaviour.items.firstObject;
         CGPoint center = item.center;
